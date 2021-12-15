@@ -4,7 +4,7 @@ import logging
 import vtk, qt, ctk, slicer
 from slicer.ScriptedLoadableModule import *
 from slicer.util import VTKObservationMixin
-from matrix import get_rotation_matrix
+# from matrix import get_rotation_matrix
 
 #
 # crop
