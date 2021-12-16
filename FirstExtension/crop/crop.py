@@ -4,7 +4,8 @@ import logging
 import vtk, qt, ctk, slicer
 from slicer.ScriptedLoadableModule import *
 from slicer.util import VTKObservationMixin
-from matrix import get_rotation_matrix
+#from matrix.py import get_rotation_matrix
+import matrix
 
 #
 # crop
@@ -20,7 +21,7 @@ class crop(ScriptedLoadableModule):
     self.parent.title = "crop"  # TODO: make this more human readable by adding spaces
     self.parent.categories = ["Examples"]  # TODO: set categories (folders where the module shows up in the module selector)
     self.parent.dependencies = []  # TODO: add here list of module names that this module requires
-    self.parent.contributors = ["John Doe (AnyWare Corp.)"]  # TODO: replace with "Firstname Lastname (Organization)"
+    self.parent.contributors = ["Ziyu Li (uAlberta)","Yanquan Chen (uAlberta)","Fangyang Ye (uAlberta)"]  # TODO: replace with "Firstname Lastname (Organization)"
     # TODO: update with short description of the module and a link to online module documentation
     self.parent.helpText = """
 This is an example of scripted loadable module bundled in an extension.
@@ -134,10 +135,11 @@ class cropWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
     # (in the selected parameter node).
     self.ui.annotationROISelector.connect("currentNodeChanged(vtkMRMLNode*)", self.updateParameterNodeFromGUI)
     self.ui.inputSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.updateParameterNodeFromGUI)
+    self.ui.transformNodeSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.updateParameterNodeFromGUI)
     self.ui.outputSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.updateParameterNodeFromGUI)
-    self.ui.imageThresholdSliderWidget.connect("valueChanged(double)", self.updateParameterNodeFromGUI)
-    self.ui.invertOutputCheckBox.connect("toggled(bool)", self.updateParameterNodeFromGUI)
-    self.ui.invertedOutputSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.updateParameterNodeFromGUI)
+    #self.ui.imageThresholdSliderWidget.connect("valueChanged(double)", self.updateParameterNodeFromGUI)
+    #self.ui.invertOutputCheckBox.connect("toggled(bool)", self.updateParameterNodeFromGUI)
+    #self.ui.invertedOutputSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.updateParameterNodeFromGUI)
     self.ui.LRSlider.connect("valueChanged(double)",self.updateParameterNodeFromGUI)
     self.ui.PASlider.connect("valueChanged(double)",self.updateParameterNodeFromGUI)
     self.ui.ISSlider.connect("valueChanged(double)",self.updateParameterNodeFromGUI)
@@ -145,6 +147,7 @@ class cropWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
     # Buttons
     self.ui.showROICheckBox.connect('toggled(bool)', self.onCheckedShowROI)
     self.ui.applyButton.connect('clicked(bool)', self.onApplyButton)
+    self.ui.resetButton.connect("clicked(bool)", self.onResetButton)
 
     # Make sure parameter node is initialized (needed for module reload)
     self.initializeParameterNode()
@@ -225,46 +228,66 @@ class cropWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
     This method is called whenever parameter node is changed.
     The module GUI is updated to show the current state of the parameter node.
     """
-    print("gui changed!")
 
     if self._parameterNode is None or self._updatingGUIFromParameterNode:
       return
 
     # Make sure GUI changes do not call updateParameterNodeFromGUI (it could cause infinite loop)
+    print("gui changed!")
     self._updatingGUIFromParameterNode = True
 
     # Update node selectors and sliders
     self.ui.annotationROISelector.setCurrentNode(self._parameterNode.GetNodeReference("ROINode"))
     self.ui.inputSelector.setCurrentNode(self._parameterNode.GetNodeReference("InputVolume"))
+    self.ui.transformNodeSelector.setCurrentNode(self._parameterNode.GetNodeReference("TransformNode"))
     self.ui.outputSelector.setCurrentNode(self._parameterNode.GetNodeReference("OutputVolume"))
-    self.ui.invertedOutputSelector.setCurrentNode(self._parameterNode.GetNodeReference("OutputVolumeInverse"))
-    self.ui.imageThresholdSliderWidget.value = float(self._parameterNode.GetParameter("Threshold"))
-    self.ui.invertOutputCheckBox.checked = (self._parameterNode.GetParameter("Invert") == "true")
+    #self.ui.invertedOutputSelector.setCurrentNode(self._parameterNode.GetNodeReference("OutputVolumeInverse"))
+    #self.ui.imageThresholdSliderWidget.value = float(self._parameterNode.GetParameter("Threshold"))
+    #self.ui.invertOutputCheckBox.checked = (self._parameterNode.GetParameter("Invert") == "true")
     
-    if self._parameterNode.GetNodeReference("ROINode"):
+    roi_node = self._parameterNode.GetNodeReference("ROINode")
+    if roi_node:
       self.ui.showROICheckBox.checkable = True
+      #print(self._parameterNode.GetNodeReference("ROINode").GetROIAnnotationVisibility())
+      self.ui.showROICheckBox.checked = (self._parameterNode.GetNodeReference("ROINode").GetDisplayVisibility() == True)
+    else:
+      self.ui.showROICheckBox.checkable = False
+    
+    transform_node = self._parameterNode.GetNodeReference("TransformNode")
+    if transform_node:
       self.ui.LRSlider.enabled = True
       self.ui.PASlider.enabled = True
       self.ui.ISSlider.enabled = True
-      #print(self._parameterNode.GetNodeReference("ROINode").GetROIAnnotationVisibility())
-      self.ui.showROICheckBox.checked = (self._parameterNode.GetNodeReference("ROINode").GetDisplayVisibility() == True)
+      self.ui.resetButton.enabled = True
+      # get transform_node's transform matrix, then calculate LR, PA, IS rotate degree. initialize the value
+      #change to this matrix won't apply, see https://apidocs.slicer.org/master/classvtkMRMLTransformNode.html#aceaae1709642a781e6006fdc2578dc8c
+      rotation_matrix = transform_node.GetMatrixTransformFromParent()
+      LR, PA, IS = matrix.get_rotation_angle(rotation_matrix)
+      print(PA)
+      #set ui slider
+      self.ui.LRSlider.value = LR
+      self.ui.PASlider.value = PA
+      self.ui.ISSlider.value = IS
+      self._parameterNode.SetParameter("LR", str(self.ui.LRSlider.value))
+      self._parameterNode.SetParameter("PA",str(self.ui.PASlider.value))
+      self._parameterNode.SetParameter("IS",str(self.ui.ISSlider.value))
+      '''
+      if roi_node:
+        roi_node.SetAndObserveTransformNodeID(transform_node.GetID())
+      '''
     else:
       self.ui.LRSlider.enabled = False
       self.ui.PASlider.enabled = False
       self.ui.ISSlider.enabled = False
-      self.ui.showROICheckBox.checkable = False
+      self.ui.resetButton.enabled = False
 
     # Update buttons states and tooltips
-    '''
-    if self._parameterNode.GetNodeReference("InputVolume") and self._parameterNode.GetNodeReference("OutputVolume"):
-      self.ui.applyButton.toolTip = "Compute output volume"
+    
+    if roi_node and transform_node and self._parameterNode.GetNodeReference("OutputVolume"):
       self.ui.applyButton.enabled = True
     else:
-      self.ui.applyButton.toolTip = "Select input and output volume nodes"
       self.ui.applyButton.enabled = False
 
-    # All the GUI updates are done
-    '''
     self._updatingGUIFromParameterNode = False
 
   def updateParameterNodeFromGUI(self, caller=None, event=None):
@@ -273,68 +296,75 @@ class cropWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
     The changes are saved into the parameter node (so that they are restored when the scene is saved and loaded).
     """
 
-    print("parameter changed!")
-
     if self._parameterNode is None or self._updatingGUIFromParameterNode:
       return
+
+    print("parameter changed!")
 
     wasModified = self._parameterNode.StartModify()  # Modify all properties in a single batch
 
 
     self._parameterNode.SetNodeReferenceID("ROINode", self.ui.annotationROISelector.currentNodeID)
     self._parameterNode.SetNodeReferenceID("InputVolume", self.ui.inputSelector.currentNodeID)
+    self._parameterNode.SetNodeReferenceID("TransformNode", self.ui.transformNodeSelector.currentNodeID)
     self._parameterNode.SetNodeReferenceID("OutputVolume", self.ui.outputSelector.currentNodeID)
-    self._parameterNode.SetParameter("Threshold", str(self.ui.imageThresholdSliderWidget.value))
-    self._parameterNode.SetParameter("Invert", "true" if self.ui.invertOutputCheckBox.checked else "false")
-    self._parameterNode.SetNodeReferenceID("OutputVolumeInverse", self.ui.invertedOutputSelector.currentNodeID)
+    #self._parameterNode.SetParameter("Threshold", str(self.ui.imageThresholdSliderWidget.value))
+    #self._parameterNode.SetParameter("Invert", "true" if self.ui.invertOutputCheckBox.checked else "false")
+    #self._parameterNode.SetNodeReferenceID("OutputVolumeInverse", self.ui.invertedOutputSelector.currentNodeID)
     self._parameterNode.SetParameter("LR", str(self.ui.LRSlider.value))
     self._parameterNode.SetParameter("PA",str(self.ui.PASlider.value))
     self._parameterNode.SetParameter("IS",str(self.ui.ISSlider.value))
 
+    LR = float(self._parameterNode.GetParameter("LR"))
+    PA = float(self._parameterNode.GetParameter("PA"))
+    IS = float(self._parameterNode.GetParameter("IS"))
 
-    if self._parameterNode.GetNodeReference("ROINode"):
+    roi_node = self._parameterNode.GetNodeReference("ROINode")
+    '''
+    if roi_node:
       self.ui.showROICheckBox.checkable = True
-      self.ui.LRSlider.enabled = True
-      self.ui.PASlider.enabled = True
-      self.ui.ISSlider.enabled = True
       #print(self._parameterNode.GetNodeReference("ROINode").GetROIAnnotationVisibility())
       self.ui.showROICheckBox.checked = (self._parameterNode.GetNodeReference("ROINode").GetDisplayVisibility() == True)
     else:
       self.ui.showROICheckBox.checkable = False
-      self.ui.LRSlider.enabled = False
-      self.ui.PASlider.enabled = False
-      self.ui.ISSlider.enabled = False
+    '''
+    
+    transform_node = self._parameterNode.GetNodeReference("TransformNode")
+    if transform_node:
+      rotation_matrix = matrix.get_rotation_matrix(LR,PA,IS)
+      transform_node.SetMatrixTransformToParent(rotation_matrix)
+      if roi_node:
+        roi_node.SetAndObserveTransformNodeID(transform_node.GetID())
+      '''
+      self.ui.LRSlider.enabled = True
+      self.ui.PASlider.enabled = True
+      self.ui.ISSlider.enabled = True
+      #compute rotation matrix and update transform node
+      rotation_matrix = matrix.get_rotation_matrix(LR,PA,IS)
+      transform_node.SetMatrixTransformToParent(rotation_matrix)
+      if roi_node:
+        roi_node.SetAndObserveTransformNodeID(transform_node.GetID())
+    else:
+      self.ui.LRSlider.enabled = True
+      self.ui.PASlider.enabled = True
+      self.ui.ISSlider.enabled = True
+      '''
+    
 
     self._parameterNode.EndModify(wasModified)
-
-    #do the transform
 
   def onApplyButton(self):
     """
     Run processing when user clicks "Apply" button.
     """
     try:
-      '''
       # Compute output
-      self.logic.process(self.ui.inputSelector.currentNode(), self.ui.outputSelector.currentNode(),
-        self.ui.imageThresholdSliderWidget.value, self.ui.invertOutputCheckBox.checked)
-
-      # Compute inverted output (if needed)
-      if self.ui.invertedOutputSelector.currentNode():
-        # If additional output volume is selected then result with inverted threshold is written there
-        self.logic.process(self.ui.inputSelector.currentNode(), self.ui.invertedOutputSelector.currentNode(),
-          self.ui.imageThresholdSliderWidget.value, not self.ui.invertOutputCheckBox.checked, showResult=False)
-      '''
-      print("this is slider value")
-      print(self.ui.LRSlider.value)
+      self.logic.process(self.ui.inputSelector.currentNode(), self.ui.outputSelector.currentNode(),self.ui.annotationROISelector.currentNode())
+      
     except Exception as e:
       slicer.util.errorDisplay("Failed to compute results: "+str(e))
       import traceback
       traceback.print_exc()
-
-  def onRegister(self):
-    if self._parameterNode.GetNodeReference("ROINode"):
-      if 
 
   def onCheckedShowROI(self):
     node = self._parameterNode.GetNodeReference("ROINode")
@@ -344,6 +374,19 @@ class cropWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
     else:
       print("not show")
       node.SetDisplayVisibility(False)
+  
+  def onResetButton(self):
+    transform_node = self._parameterNode.GetNodeReference("TransformNode")
+    if transform_node:
+      rotationMatrix = vtk.vtkMatrix4x4()
+      rotationMatrix.Identity()
+      transform_node.SetMatrixTransformToParent(rotationMatrix)
+      self.updateGUIFromParameterNode()
+'''
+  def onRegister(self):
+    ROINode = self._parameterNode.GetNodeReference("ROINode")
+    if self._parameterNode.GetNodeReference("ROINode"):
+'''
   
 
 
@@ -376,7 +419,7 @@ class cropLogic(ScriptedLoadableModuleLogic):
     if not parameterNode.GetParameter("Invert"):
       parameterNode.SetParameter("Invert", "false")
 
-  def process(self, inputVolume, outputVolume, imageThreshold, invert=False, showResult=True):
+  def process(self, inputVolume, outputVolume, ROINode, showResult=True):
     """
     Run the processing algorithm.
     Can be used without GUI widget.
@@ -394,16 +437,12 @@ class cropLogic(ScriptedLoadableModuleLogic):
     startTime = time.time()
     logging.info('Processing started')
 
-    # Compute the thresholded output volume using the "Threshold Scalar Volume" CLI module
-    cliParams = {
-      'InputVolume': inputVolume.GetID(),
-      'OutputVolume': outputVolume.GetID(),
-      'ThresholdValue' : imageThreshold,
-      'ThresholdType' : 'Above' if invert else 'Below'
-      }
-    cliNode = slicer.cli.run(slicer.modules.thresholdscalarvolume, None, cliParams, wait_for_completion=True, update_display=showResult)
-    # We don't need the CLI module node anymore, remove it to not clutter the scene with it
-    slicer.mrmlScene.RemoveNode(cliNode)
+    parameter = slicer.vtkMRMLCropVolumeParametersNode()
+    parameter.SetInputVolumeNodeID(inputVolume.GetID())
+    parameter.SetOutputVolumeNodeID(outputVolume.GetID())
+    parameter.SetROINodeID(ROINode.GetID())
+
+    slicer.modules.cropvolume.logic().Apply(parameter)
 
     stopTime = time.time()
     logging.info('Processing completed in {0:.2f} seconds'.format(stopTime-startTime))
